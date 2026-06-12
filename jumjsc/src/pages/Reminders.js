@@ -464,7 +464,7 @@ const Reminders = () => {
           {Object.entries(templates).map(([id, tpl]) => (
             <div 
               key={id}
-              className={`template-card ${currentTemplate == id ? 'active' : ''}`}
+              className={`template-card ${currentTemplate === id ? 'active' : ''}`}
               onClick={() => setCurrentTemplate(parseInt(id))}
             >
               <div className="template-header">
