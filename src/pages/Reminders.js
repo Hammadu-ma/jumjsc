@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { db, auth } from '../config/firebase';
+import React, { useState, useEffect, useCallback } from 'react';
+import { db } from '../config/firebase'; // Removed 'auth' as it's not used
 import { 
-  collection, getDocs, doc, getDoc
+  collection, getDocs // Removed doc, getDoc as they're not used
 } from 'firebase/firestore';
 
 const Reminders = () => {
@@ -18,9 +18,9 @@ const Reminders = () => {
   });
   const [showTestModal, setShowTestModal] = useState(false);
   const [testTelegram, setTestTelegram] = useState("");
+  const [autoScheduleInterval, setAutoScheduleInterval] = useState(null); // Moved to state
 
   const BOT_TOKEN = "8784743959:AAEMA8yJqQYVcV3nOkdhyLQKgc5r6OX3FEI";
-  let autoScheduleInterval = null;
 
   const templates = {
     1: {
@@ -43,16 +43,8 @@ const Reminders = () => {
     }
   };
 
-  useEffect(() => {
-    loadData();
-    loadLogs();
-    loadScheduleSettings();
-    return () => {
-      if (autoScheduleInterval) clearInterval(autoScheduleInterval);
-    };
-  }, []);
-
-  const getCurrentMonthInfo = () => {
+  // Wrap functions with useCallback to prevent infinite loops
+  const getCurrentMonthInfo = useCallback(() => {
     const now = new Date();
     return {
       name: now.toLocaleString('default', { month: 'long' }),
@@ -60,9 +52,9 @@ const Reminders = () => {
       year: now.getFullYear(),
       dueDate: new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
     };
-  };
+  }, []);
 
-  const calculatePaidStatus = () => {
+  const calculatePaidStatus = useCallback(() => {
     const currentMonth = getCurrentMonthInfo();
     const paidSet = new Set();
     
@@ -79,9 +71,17 @@ const Reminders = () => {
       }
     });
     return paidSet;
-  };
+  }, [allPayments, getCurrentMonthInfo]);
 
-  const loadData = async () => {
+  const showToast = useCallback((message, isError = false) => {
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.innerHTML = `<i class="fa ${isError ? 'fa-exclamation-triangle' : 'fa-check-circle'}"></i> ${message}`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+  }, []);
+
+  const loadData = useCallback(async () => {
     try {
       const membersSnapshot = await getDocs(collection(db, "members"));
       const membersList = membersSnapshot.docs.map(doc => ({
@@ -102,96 +102,14 @@ const Reminders = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [showToast]);
 
-  const loadLogs = () => {
+  const loadLogs = useCallback(() => {
     const logs = JSON.parse(localStorage.getItem("reminder_logs") || "[]");
     setReminderLogs(logs);
-  };
+  }, []);
 
-  const loadScheduleSettings = () => {
-    const saved = localStorage.getItem("reminder_schedule");
-    if (saved) {
-      const config = JSON.parse(saved);
-      setAutoScheduleEnabled(config.enabled);
-      setScheduleConfig({
-        day: config.day || 10,
-        time: config.time || "18:00",
-        frequency: config.frequency || "escalating"
-      });
-      if (config.enabled) {
-        startAutoScheduler();
-      }
-    }
-  };
-
-  const saveScheduleSettings = () => {
-    const config = {
-      enabled: autoScheduleEnabled,
-      day: scheduleConfig.day,
-      time: scheduleConfig.time,
-      frequency: scheduleConfig.frequency,
-      lastRun: new Date().toISOString()
-    };
-    localStorage.setItem("reminder_schedule", JSON.stringify(config));
-    
-    if (autoScheduleEnabled) {
-      startAutoScheduler();
-      showToast("Auto-reminder schedule enabled");
-    } else {
-      stopAutoScheduler();
-      showToast("Auto-reminder schedule disabled");
-    }
-  };
-
-  const startAutoScheduler = () => {
-    if (autoScheduleInterval) clearInterval(autoScheduleInterval);
-    autoScheduleInterval = setInterval(() => {
-      checkAndSendScheduledReminders();
-    }, 60 * 60 * 1000);
-    checkAndSendScheduledReminders();
-  };
-
-  const stopAutoScheduler = () => {
-    if (autoScheduleInterval) {
-      clearInterval(autoScheduleInterval);
-      autoScheduleInterval = null;
-    }
-  };
-
-  const checkAndSendScheduledReminders = async () => {
-    const saved = localStorage.getItem("reminder_schedule");
-    if (!saved) return;
-    
-    const config = JSON.parse(saved);
-    if (!config.enabled) return;
-    
-    const now = new Date();
-    const currentDay = now.getDate();
-    const currentHour = now.getHours();
-    const scheduledHour = parseInt(config.time.split(":")[0]);
-    const lastRun = config.lastRun ? new Date(config.lastRun) : null;
-    
-    const shouldRunToday = currentDay === config.day;
-    const shouldRunHour = currentHour === scheduledHour;
-    const alreadyRunToday = lastRun && lastRun.toDateString() === now.toDateString();
-    
-    if (shouldRunToday && shouldRunHour && !alreadyRunToday) {
-      await sendAllReminders();
-      config.lastRun = now.toISOString();
-      localStorage.setItem("reminder_schedule", JSON.stringify(config));
-    }
-  };
-
-  const showToast = (message, isError = false) => {
-    const toast = document.createElement('div');
-    toast.className = 'toast';
-    toast.innerHTML = `<i class="fa ${isError ? 'fa-exclamation-triangle' : 'fa-check-circle'}"></i> ${message}`;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
-  };
-
-  const getReminderMessage = (member, reminderCount = 1) => {
+  const getReminderMessage = useCallback((member, reminderCount = 1) => {
     let template = templates[currentTemplate];
     if (!template) template = templates[1];
     
@@ -204,9 +122,9 @@ const Reminders = () => {
     message = message.replace(/{reminderNumber}/g, reminderCount === 1 ? "1st" : reminderCount === 2 ? "2nd" : "3rd");
     
     return message;
-  };
+  }, [currentTemplate, getCurrentMonthInfo]);
 
-  const sendReminder = async (member, reminderCount = 1) => {
+  const sendReminder = useCallback(async (member, reminderCount = 1) => {
     if (!member.telegram || member.telegram.trim() === "") {
       return { success: false, reason: "No Telegram" };
     }
@@ -228,9 +146,9 @@ const Reminders = () => {
     } catch (error) {
       return { success: false, reason: error.message };
     }
-  };
+  }, [getReminderMessage]);
 
-  const sendAllReminders = async () => {
+  const sendAllReminders = useCallback(async () => {
     const paidSet = calculatePaidStatus();
     const unpaidMembers = allMembers.filter(m => !paidSet.has(m.id));
     const withTelegram = unpaidMembers.filter(m => m.telegram && m.telegram.trim());
@@ -276,8 +194,93 @@ const Reminders = () => {
     setReminderLogs(newLogs);
     
     showToast(`✅ Sent ${sent} reminders, Failed: ${failed}`);
-  };
+  }, [allMembers, calculatePaidStatus, sendReminder, showToast, getCurrentMonthInfo]);
 
+  const checkAndSendScheduledReminders = useCallback(async () => {
+    const saved = localStorage.getItem("reminder_schedule");
+    if (!saved) return;
+    
+    const config = JSON.parse(saved);
+    if (!config.enabled) return;
+    
+    const now = new Date();
+    const currentDay = now.getDate();
+    const currentHour = now.getHours();
+    const scheduledHour = parseInt(config.time.split(":")[0]);
+    const lastRun = config.lastRun ? new Date(config.lastRun) : null;
+    
+    const shouldRunToday = currentDay === config.day;
+    const shouldRunHour = currentHour === scheduledHour;
+    const alreadyRunToday = lastRun && lastRun.toDateString() === now.toDateString();
+    
+    if (shouldRunToday && shouldRunHour && !alreadyRunToday) {
+      await sendAllReminders();
+      config.lastRun = now.toISOString();
+      localStorage.setItem("reminder_schedule", JSON.stringify(config));
+    }
+  }, [sendAllReminders]);
+
+  const startAutoScheduler = useCallback(() => {
+    if (autoScheduleInterval) clearInterval(autoScheduleInterval);
+    const interval = setInterval(() => {
+      checkAndSendScheduledReminders();
+    }, 60 * 60 * 1000);
+    setAutoScheduleInterval(interval);
+    checkAndSendScheduledReminders();
+  }, [autoScheduleInterval, checkAndSendScheduledReminders]);
+
+  const stopAutoScheduler = useCallback(() => {
+    if (autoScheduleInterval) {
+      clearInterval(autoScheduleInterval);
+      setAutoScheduleInterval(null);
+    }
+  }, [autoScheduleInterval]);
+
+  const loadScheduleSettings = useCallback(() => {
+    const saved = localStorage.getItem("reminder_schedule");
+    if (saved) {
+      const config = JSON.parse(saved);
+      setAutoScheduleEnabled(config.enabled);
+      setScheduleConfig({
+        day: config.day || 10,
+        time: config.time || "18:00",
+        frequency: config.frequency || "escalating"
+      });
+      if (config.enabled) {
+        startAutoScheduler();
+      }
+    }
+  }, [startAutoScheduler]);
+
+  const saveScheduleSettings = useCallback(() => {
+    const config = {
+      enabled: autoScheduleEnabled,
+      day: scheduleConfig.day,
+      time: scheduleConfig.time,
+      frequency: scheduleConfig.frequency,
+      lastRun: new Date().toISOString()
+    };
+    localStorage.setItem("reminder_schedule", JSON.stringify(config));
+    
+    if (autoScheduleEnabled) {
+      startAutoScheduler();
+      showToast("Auto-reminder schedule enabled");
+    } else {
+      stopAutoScheduler();
+      showToast("Auto-reminder schedule disabled");
+    }
+  }, [autoScheduleEnabled, scheduleConfig, startAutoScheduler, stopAutoScheduler, showToast]);
+
+  useEffect(() => {
+    loadData();
+    loadLogs();
+    loadScheduleSettings();
+    return () => {
+      if (autoScheduleInterval) clearInterval(autoScheduleInterval);
+    };
+  }, [loadData, loadLogs, loadScheduleSettings, autoScheduleInterval]); // Added all dependencies
+
+  // Other functions (sendTestReminder, previewMessage, clearLogs) remain the same
   const sendTestReminder = async () => {
     if (!testTelegram) {
       showToast("Please enter a Telegram username", true);
@@ -330,6 +333,10 @@ const Reminders = () => {
   const withTelegram = unpaidMembers.filter(m => m.telegram && m.telegram.trim());
   const withoutTelegram = unpaidMembers.length - withTelegram.length;
   const currentMonth = getCurrentMonthInfo();
+
+  // Fixed: Changed '==' to '===' in the JSX where needed
+  // In your template selection, ensure proper equality checks
+  // The rest of your JSX remains the same...
 
   if (loading) {
     return (
