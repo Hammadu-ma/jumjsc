@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import Payments from './pages/Payments';
-import Members from './pages/Members';
-import Reminders from './pages/Reminders';
+import Payments from './pages/Payments.jsx';  // Changed from .js to .jsx
+import Members from './pages/Members.jsx';    // Changed from .js to .jsx
+import Reminders from './pages/Reminders.jsx'; // Changed from .js to .jsx
 import './styles/bottomNav.css';
 
 // Bottom Navigation Component
@@ -36,7 +36,6 @@ const BottomNav = () => {
             <span>{item.name}</span>
           </button>
         ))}
-
       </nav>
 
       {/* Admin Menu Modal - Bottom Sheet */}
